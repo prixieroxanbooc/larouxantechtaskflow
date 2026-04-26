@@ -32,7 +32,7 @@ export default function LoginPage() {
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8">
         <div className="text-center mb-8">
           <div className="text-4xl mb-3">📋</div>
-          <h1 className="text-2xl font-bold text-gray-900">TaskFlow</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Larouxantech TaskFlow</h1>
           <p className="text-gray-500 mt-1">Sign in to your workspace</p>
         </div>
 

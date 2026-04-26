@@ -40,6 +40,7 @@ app.use('/api/boards', groupRoutes);
 app.use('/api/boards', itemRoutes);
 app.use('/api/boards', columnRoutes);
 app.use('/oauth', oauthRoutes);
+app.use('/api/oauth', oauthRoutes);
 app.use('/api/developer/keys', apiKeyRoutes);
 
 app.get('/api/health', (_req: Request, res: Response) =>

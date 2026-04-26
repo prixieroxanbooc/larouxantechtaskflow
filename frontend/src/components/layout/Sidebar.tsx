@@ -32,7 +32,7 @@ export default function Sidebar() {
       <div className="px-4 py-4 border-b border-gray-100">
         <div className="flex items-center gap-2">
           <span className="text-2xl">📋</span>
-          <span className="font-bold text-gray-900 text-lg">TaskFlow</span>
+          <span className="font-bold text-gray-900 text-lg">Larouxantech TaskFlow</span>
         </div>
         <p className="text-xs text-gray-400 mt-0.5 ml-9">Work OS</p>
       </div>

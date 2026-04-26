@@ -15,16 +15,27 @@ function CreateBoardModal({ onClose }: { onClose: () => void }) {
   const [description, setDescription] = useState('');
   const [color, setColor] = useState(BOARD_COLORS[0]);
   const [icon, setIcon] = useState(BOARD_ICONS[0]);
+  const [error, setError] = useState('');
 
   const mutation = useMutation({
     mutationFn: boardsApi.create,
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['boards'] }); onClose(); },
+    onError: (err: unknown) => {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      setError(msg || 'Failed to create board. Please try again.');
+    },
   });
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md p-6">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Create New Board</h2>
+
+        {error && (
+          <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-3 py-2 rounded-lg mb-4 text-sm">
+            {error}
+          </div>
+        )}
 
         <div className="mb-4">
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Board Name</label>

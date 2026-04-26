@@ -29,7 +29,14 @@ export async function authenticate(req: AuthRequest, res: Response, next: NextFu
   // ── Try JWT first (user login token or OAuth client token) ─────────────────
   try {
     const payload = jwt.verify(token, JWT_SECRET) as UserPayload;
-    req.user = { id: payload.id, email: payload.email, name: payload.name };
+    // Confirm user still exists in DB (guards against wiped/reset database)
+    const db = getDb();
+    const dbUser = db.prepare('SELECT id, email, name FROM users WHERE id = ?').get(payload.id) as DbUserRow | undefined;
+    if (!dbUser) {
+      res.status(401).json({ error: 'Session expired, please log in again' });
+      return;
+    }
+    req.user = { id: dbUser.id, email: dbUser.email, name: dbUser.name };
     next();
     return;
   } catch {

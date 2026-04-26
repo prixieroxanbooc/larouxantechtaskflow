@@ -23,33 +23,33 @@ function CreateBoardModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
-        <h2 className="text-lg font-semibold mb-4">Create New Board</h2>
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md p-6">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Create New Board</h2>
 
         <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-1">Board Name</label>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Board Name</label>
           <input
             autoFocus
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+            className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
             placeholder="e.g. Marketing Q2"
           />
         </div>
 
         <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Description</label>
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
+            className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
             rows={2}
             placeholder="Optional description"
           />
         </div>
 
         <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-2">Color</label>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Color</label>
           <div className="flex gap-2 flex-wrap">
             {BOARD_COLORS.map((c) => (
               <button
@@ -63,13 +63,13 @@ function CreateBoardModal({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="mb-6">
-          <label className="block text-sm font-medium text-gray-700 mb-2">Icon</label>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Icon</label>
           <div className="flex gap-2 flex-wrap">
             {BOARD_ICONS.map((ic) => (
               <button
                 key={ic}
                 onClick={() => setIcon(ic)}
-                className={`w-9 h-9 text-lg rounded-lg border-2 transition-colors ${icon === ic ? 'border-brand-500 bg-brand-50' : 'border-gray-200 hover:border-gray-300'}`}
+                className={`w-9 h-9 text-lg rounded-lg border-2 transition-colors ${icon === ic ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/30' : 'border-gray-200 dark:border-gray-600 hover:border-gray-300'}`}
               >
                 {ic}
               </button>
@@ -78,7 +78,7 @@ function CreateBoardModal({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="flex gap-3 justify-end">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">Cancel</button>
           <button
             onClick={() => mutation.mutate({ name, description, color, icon })}
             disabled={!name.trim() || mutation.isPending}
@@ -115,8 +115,8 @@ export default function DashboardPage() {
     <div className="p-6 max-w-6xl">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">My Workspace</h1>
-          <p className="text-gray-500 text-sm mt-0.5">Welcome back, {user?.name}</p>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">My Workspace</h1>
+          <p className="text-gray-500 dark:text-gray-400 text-sm mt-0.5">Welcome back, {user?.name}</p>
         </div>
         <button
           onClick={() => setShowCreate(true)}
@@ -132,18 +132,18 @@ export default function DashboardPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search boards…"
-          className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+          className="w-full pl-9 pr-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
         />
       </div>
 
       {isLoading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="h-36 bg-gray-100 rounded-xl animate-pulse" />
+            <div key={i} className="h-36 bg-gray-100 dark:bg-gray-800 rounded-xl animate-pulse" />
           ))}
         </div>
       ) : filtered.length === 0 ? (
-        <div className="text-center py-20 text-gray-400">
+        <div className="text-center py-20 text-gray-400 dark:text-gray-500">
           <Layout size={48} className="mx-auto mb-4 opacity-30" />
           <p className="font-medium">{boards.length === 0 ? 'No boards yet' : 'No boards match your search'}</p>
           {boards.length === 0 && (
@@ -158,7 +158,7 @@ export default function DashboardPage() {
             <div
               key={board.id}
               onClick={() => navigate(`/board/${board.id}`)}
-              className="group relative bg-white border border-gray-200 rounded-xl p-5 cursor-pointer hover:shadow-md hover:border-gray-300 transition-all"
+              className="group relative bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 cursor-pointer hover:shadow-md hover:border-gray-300 dark:hover:border-gray-600 transition-all"
             >
               <div
                 className="w-10 h-10 rounded-lg flex items-center justify-center text-xl mb-3"
@@ -170,18 +170,18 @@ export default function DashboardPage() {
                 className="absolute top-0 left-0 w-full h-1 rounded-t-xl"
                 style={{ backgroundColor: board.color }}
               />
-              <h3 className="font-semibold text-gray-900 truncate">{board.name}</h3>
+              <h3 className="font-semibold text-gray-900 dark:text-white truncate">{board.name}</h3>
               {board.description && (
-                <p className="text-gray-500 text-sm mt-1 line-clamp-2">{board.description}</p>
+                <p className="text-gray-500 dark:text-gray-400 text-sm mt-1 line-clamp-2">{board.description}</p>
               )}
-              <p className="text-xs text-gray-400 mt-3">
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-3">
                 {new Date(board.created_at).toLocaleDateString()}
               </p>
 
               {board.owner_id === user?.id && (
                 <button
                   onClick={(e) => { e.stopPropagation(); deleteMutation.mutate(board.id); }}
-                  className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-all"
+                  className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded transition-all"
                 >
                   <Trash2 size={14} />
                 </button>

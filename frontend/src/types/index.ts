@@ -4,6 +4,7 @@ export interface User {
   name: string;
   avatar?: string;
   created_at: string;
+  email_verified?: number;
 }
 
 export interface Board {

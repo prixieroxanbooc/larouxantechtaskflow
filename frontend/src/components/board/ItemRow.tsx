@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Trash2, MessageSquare } from 'lucide-react';
+import { Trash2, MessageSquare, Check } from 'lucide-react';
 import { Item, Column } from '@/types';
 import { itemsApi } from '@/api/client';
 import ItemDetailModal from './ItemDetailModal';
 import CellEditor from './CellEditor';
 
-interface Props { item: Item; columns: Column[]; boardId: string; }
+interface Props { item: Item; columns: Column[]; boardId: string; isSelected?: boolean; onSelect?: (id: string) => void; }
 
-export default function ItemRow({ item, columns, boardId }: Props) {
+export default function ItemRow({ item, columns, boardId, isSelected = false, onSelect }: Props) {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [itemName, setItemName] = useState(item.name);
@@ -34,8 +34,17 @@ export default function ItemRow({ item, columns, boardId }: Props) {
         onMouseEnter={() => setHover(true)}
         onMouseLeave={() => setHover(false)}
       >
-        {/* Checkbox placeholder */}
-        <div className="w-5 h-5 border border-gray-300 rounded shrink-0 mr-2" />
+        {/* Checkbox */}
+        <button
+          onClick={() => onSelect?.(item.id)}
+          className={`w-5 h-5 rounded border flex items-center justify-center shrink-0 mr-2 transition-colors ${
+            isSelected
+              ? 'bg-brand-500 border-brand-500 text-white'
+              : 'border-gray-300 hover:border-brand-400 bg-white'
+          }`}
+        >
+          {isSelected && <Check size={11} />}
+        </button>
 
         {/* Item name */}
         <div className="flex-1 min-w-0 flex items-center gap-1.5">

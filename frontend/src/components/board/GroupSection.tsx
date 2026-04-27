@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, Trash2, Check, Minus } from 'lucide-react';
 import { Group, Column, Item } from '@/types';
 import { groupsApi, itemsApi } from '@/api/client';
 import ItemRow from './ItemRow';
@@ -20,8 +20,20 @@ export default function GroupSection({ group, columns, items, boardId }: Props) 
   const [newItemName, setNewItemName] = useState('');
   const [editingName, setEditingName] = useState(false);
   const [groupName, setGroupName] = useState(group.name);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['board', boardId] });
+
+  const toggleSelect = (id: string) =>
+    setSelectedIds((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
+
+  const toggleSelectAll = () =>
+    setSelectedIds(selectedIds.size === items.length ? new Set() : new Set(items.map((i) => i.id)));
+
+  const bulkDelete = useMutation({
+    mutationFn: () => Promise.all([...selectedIds].map((id) => itemsApi.delete(boardId, id))),
+    onSuccess: () => { invalidate(); setSelectedIds(new Set()); },
+  });
 
   const createItem = useMutation({
     mutationFn: (name: string) => itemsApi.create(boardId, { name, group_id: group.id }),
@@ -88,7 +100,21 @@ export default function GroupSection({ group, columns, items, boardId }: Props) 
       {!collapsed && (
         <>
           <div className="flex items-center border-b border-gray-100 bg-gray-50 px-4 py-1.5 text-xs font-medium text-gray-500">
-            <div className="flex-1 min-w-0 pl-6">Item</div>
+            <button
+              onClick={toggleSelectAll}
+              className={`w-5 h-5 rounded border flex items-center justify-center shrink-0 mr-2 transition-colors bg-white ${
+                items.length > 0 && selectedIds.size === items.length
+                  ? 'bg-brand-500 border-brand-500 text-white'
+                  : 'border-gray-300 hover:border-brand-400'
+              }`}
+            >
+              {items.length > 0 && selectedIds.size === items.length ? (
+                <Check size={11} />
+              ) : selectedIds.size > 0 ? (
+                <Minus size={11} className="text-brand-500" />
+              ) : null}
+            </button>
+            <div className="flex-1 min-w-0">Item</div>
             {columns.map((col) => (
               <ColumnHeader key={col.id} column={col} boardId={boardId} />
             ))}
@@ -98,9 +124,26 @@ export default function GroupSection({ group, columns, items, boardId }: Props) 
           {/* Items */}
           <div className="divide-y divide-gray-50">
             {items.map((item) => (
-              <ItemRow key={item.id} item={item} columns={columns} boardId={boardId} />
+              <ItemRow key={item.id} item={item} columns={columns} boardId={boardId} isSelected={selectedIds.has(item.id)} onSelect={toggleSelect} />
             ))}
           </div>
+
+          {/* Bulk action bar */}
+          {selectedIds.size > 0 && (
+            <div className="px-4 py-2 bg-brand-50 border-t border-brand-100 flex items-center gap-3">
+              <span className="text-sm text-brand-700 font-medium">{selectedIds.size} item{selectedIds.size > 1 ? 's' : ''} selected</span>
+              <button
+                onClick={() => bulkDelete.mutate()}
+                disabled={bulkDelete.isPending}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500 text-white text-sm rounded hover:bg-red-600 disabled:opacity-50 transition-colors"
+              >
+                <Trash2 size={13} /> Delete selected
+              </button>
+              <button onClick={() => setSelectedIds(new Set())} className="text-sm text-gray-500 hover:text-gray-700">
+                Clear
+              </button>
+            </div>
+          )}
 
           {/* Add Item */}
           <div className="px-4 py-2 border-t border-gray-50">

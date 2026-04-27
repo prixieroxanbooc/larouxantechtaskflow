@@ -88,7 +88,7 @@ app.get('/mcp/sse', async (req: Request, res: Response) => {
     const base = getBaseUrl(req);
     res.setHeader(
       'WWW-Authenticate',
-      `Bearer resource_metadata="${base}/.well-known/oauth-protected-resource"`
+      `Bearer resource_metadata="${base}/.well-known/oauth-authorization-server"`
     );
     res.status(401).json({ error: 'unauthorized', error_description: 'Authentication required. Use OAuth or pass a Bearer token.' });
     return;

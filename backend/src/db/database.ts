@@ -114,9 +114,14 @@ export async function initDatabase(): Promise<void> {
         client_secret_hash TEXT NOT NULL,
         name TEXT NOT NULL,
         description TEXT DEFAULT '',
+        redirect_uris TEXT DEFAULT '',
         owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         created_at TIMESTAMPTZ DEFAULT NOW()
       )
+    `);
+
+    await client.query(`
+      ALTER TABLE oauth_clients ADD COLUMN IF NOT EXISTS redirect_uris TEXT DEFAULT ''
     `);
 
     await client.query(`

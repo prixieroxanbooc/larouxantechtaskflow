@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Trash2, Copy, Check, KeyRound, AlertTriangle, Eye, EyeOff, ExternalLink } from 'lucide-react';
+import { Plus, Trash2, Copy, Check, KeyRound, AlertTriangle, Eye, EyeOff, ExternalLink, Pencil, Link } from 'lucide-react';
 import { api } from '@/api/client';
 import { format } from 'date-fns';
 
@@ -9,6 +9,7 @@ interface OAuthClient {
   client_id: string;
   name: string;
   description: string;
+  redirect_uris: string;
   created_at: string;
 }
 
@@ -130,10 +131,11 @@ function NewClientModal({ result, onClose }: { result: NewClientResult; onClose:
 function CreateClientModal({ onClose, onCreated }: { onClose: () => void; onCreated: (r: NewClientResult) => void }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [redirectUris, setRedirectUris] = useState('');
 
   const mutation = useMutation({
     mutationFn: () =>
-      api.post('/oauth/clients', { name, description }).then((r) => r.data as NewClientResult),
+      api.post('/oauth/clients', { name, description, redirect_uris: redirectUris }).then((r) => r.data as NewClientResult),
     onSuccess: (data) => onCreated(data),
   });
 
@@ -163,6 +165,19 @@ function CreateClientModal({ onClose, onCreated }: { onClose: () => void; onCrea
               className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
             />
           </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Redirect URIs <span className="text-gray-400 font-normal">(one per line)</span>
+            </label>
+            <textarea
+              value={redirectUris}
+              onChange={(e) => setRedirectUris(e.target.value)}
+              placeholder={`http://localhost:3000/callback\nhttps://yourapp.com/oauth/callback`}
+              rows={3}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none font-mono"
+            />
+            <p className="text-xs text-gray-400 mt-1">Required by MCP clients that use OAuth authorization flow.</p>
+          </div>
         </div>
 
         {mutation.isError && (
@@ -184,6 +199,89 @@ function CreateClientModal({ onClose, onCreated }: { onClose: () => void; onCrea
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function RedirectUrisEditor({ client }: { client: OAuthClient }) {
+  const queryClient = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(client.redirect_uris ?? '');
+
+  const save = useMutation({
+    mutationFn: () => api.patch(`/oauth/clients/${client.id}`, { redirect_uris: draft }).then((r) => r.data),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['oauth-clients'] }); setEditing(false); },
+  });
+
+  const uris = (client.redirect_uris ?? '').split('\n').map((u) => u.trim()).filter(Boolean);
+
+  if (editing) {
+    return (
+      <div className="mt-3 pt-3 border-t border-gray-100">
+        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+          <Link size={11} /> Redirect URIs
+        </label>
+        <textarea
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          rows={3}
+          placeholder={`http://localhost:3000/callback\nhttps://yourapp.com/oauth/callback`}
+          className="w-full border border-brand-300 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
+        />
+        <div className="flex items-center gap-2 mt-2">
+          <button
+            onClick={() => save.mutate()}
+            disabled={save.isPending}
+            className="px-3 py-1.5 bg-brand-500 text-white text-xs font-medium rounded-lg hover:bg-brand-600 disabled:opacity-50 transition-colors"
+          >
+            {save.isPending ? 'Saving…' : 'Save'}
+          </button>
+          <button
+            onClick={() => { setDraft(client.redirect_uris ?? ''); setEditing(false); }}
+            className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700"
+          >
+            Cancel
+          </button>
+          {save.isError && <span className="text-xs text-red-500">Save failed</span>}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3 pt-3 border-t border-gray-100">
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+          <Link size={11} /> Redirect URIs
+        </span>
+        <button
+          onClick={() => { setDraft(client.redirect_uris ?? ''); setEditing(true); }}
+          className="text-gray-300 hover:text-brand-500 transition-colors"
+          title="Edit redirect URIs"
+        >
+          <Pencil size={12} />
+        </button>
+      </div>
+      {uris.length === 0 ? (
+        <button
+          onClick={() => setEditing(true)}
+          className="text-xs text-gray-400 hover:text-brand-500 transition-colors flex items-center gap-1"
+        >
+          <Plus size={11} /> Add redirect URI
+        </button>
+      ) : (
+        <ul className="space-y-1">
+          {uris.map((uri) => (
+            <li key={uri} className="flex items-center gap-1.5">
+              <code className="text-xs font-mono text-gray-700 bg-gray-50 border border-gray-100 px-2 py-0.5 rounded truncate flex-1">
+                {uri}
+              </code>
+              <CopyButton text={uri} />
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -312,6 +410,7 @@ export default function OAuthClientsPage() {
                   </button>
                 </div>
               </div>
+              <RedirectUrisEditor client={client} />
             </div>
           ))}
         </div>

@@ -14,6 +14,7 @@ type OAuthClientRow = {
   client_secret_hash: string;
   name: string;
   description: string;
+  redirect_uris: string;
   owner_id: string;
   created_at: string;
 };
@@ -29,14 +30,14 @@ type UserRow = {
 router.get('/clients', authenticate, async (req: AuthRequest, res: Response) => {
   const db = getDb();
   const { rows } = await db.query(
-    'SELECT id, client_id, name, description, created_at FROM oauth_clients WHERE owner_id = $1 ORDER BY created_at DESC',
+    'SELECT id, client_id, name, description, redirect_uris, created_at FROM oauth_clients WHERE owner_id = $1 ORDER BY created_at DESC',
     [req.user!.id]
   );
   res.json(rows);
 });
 
 router.post('/clients', authenticate, async (req: AuthRequest, res: Response) => {
-  const { name, description } = req.body;
+  const { name, description, redirect_uris } = req.body;
   if (!name?.trim()) { res.status(400).json({ error: 'Name is required' }); return; }
 
   const db = getDb();
@@ -47,9 +48,11 @@ router.post('/clients', authenticate, async (req: AuthRequest, res: Response) =>
     crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
   const client_secret_hash = await bcrypt.hash(client_secret_raw, 10);
 
+  const uris = (redirect_uris ?? '').trim();
+
   await db.query(
-    'INSERT INTO oauth_clients (id, client_id, client_secret_hash, name, description, owner_id) VALUES ($1, $2, $3, $4, $5, $6)',
-    [id, client_id, client_secret_hash, name.trim(), description?.trim() || '', req.user!.id]
+    'INSERT INTO oauth_clients (id, client_id, client_secret_hash, name, description, redirect_uris, owner_id) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+    [id, client_id, client_secret_hash, name.trim(), description?.trim() || '', uris, req.user!.id]
   );
 
   res.status(201).json({
@@ -58,9 +61,23 @@ router.post('/clients', authenticate, async (req: AuthRequest, res: Response) =>
     client_secret: client_secret_raw,
     name: name.trim(),
     description: description?.trim() || '',
+    redirect_uris: uris,
     created_at: new Date().toISOString(),
     _warning: 'Save the client_secret NOW — it will never be shown again.',
   });
+});
+
+router.patch('/clients/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  const { redirect_uris } = req.body;
+  if (redirect_uris === undefined) { res.status(400).json({ error: 'redirect_uris is required' }); return; }
+
+  const db = getDb();
+  const result = await db.query(
+    'UPDATE oauth_clients SET redirect_uris = $1 WHERE id = $2 AND owner_id = $3',
+    [(redirect_uris ?? '').trim(), req.params.id, req.user!.id]
+  );
+  if ((result.rowCount ?? 0) === 0) { res.status(404).json({ error: 'Client not found' }); return; }
+  res.json({ success: true });
 });
 
 router.delete('/clients/:id', authenticate, async (req: AuthRequest, res: Response) => {

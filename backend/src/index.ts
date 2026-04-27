@@ -16,15 +16,24 @@ import { createMcpServer } from './mcp/factory';
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
 
+// Trust Render's HTTPS reverse proxy so req.protocol returns 'https'
+app.set('trust proxy', 1);
+
 app.use(cors({ origin: '*', credentials: false }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true })); // needed for OAuth form-encoded requests
+
+function getBaseUrl(req: Request): string {
+  // In production (Render), force https. Locally, use req.protocol.
+  const proto = process.env.NODE_ENV === 'production' ? 'https' : req.protocol;
+  return `${proto}://${req.get('host')}`;
+}
 
 // ── OAuth well-known endpoints (MCP spec requirement) ────────────────────────
 
 // Protected Resource Metadata (RFC 9728) — tells clients which auth server to use
 app.get('/.well-known/oauth-protected-resource', (req: Request, res: Response) => {
-  const base = `${req.protocol}://${req.get('host')}`;
+  const base = getBaseUrl(req);
   res.json({
     resource: base,
     authorization_servers: [base],
@@ -35,7 +44,7 @@ app.get('/.well-known/oauth-protected-resource', (req: Request, res: Response) =
 
 // Authorization Server Metadata (RFC 8414)
 app.get('/.well-known/oauth-authorization-server', (req: Request, res: Response) => {
-  const base = `${req.protocol}://${req.get('host')}`;
+  const base = getBaseUrl(req);
   res.json({
     issuer: base,
     authorization_endpoint: `${base}/oauth/authorize`,
@@ -76,7 +85,7 @@ app.get('/mcp/sse', async (req: Request, res: Response) => {
     '';
 
   if (!token) {
-    const base = `${req.protocol}://${req.get('host')}`;
+    const base = getBaseUrl(req);
     res.setHeader(
       'WWW-Authenticate',
       `Bearer resource_metadata="${base}/.well-known/oauth-protected-resource"`
@@ -106,7 +115,7 @@ app.post('/mcp/messages', async (req: Request, res: Response) => {
 
 // MCP info endpoint
 app.get('/mcp', (req: Request, res: Response) => {
-  const base = `${req.protocol}://${req.get('host')}`;
+  const base = getBaseUrl(req);
   res.json({
     name: 'TaskFlow MCP Server',
     version: '1.0.0',

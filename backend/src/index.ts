@@ -25,11 +25,13 @@ app.get('/.well-known/oauth-authorization-server', (req: Request, res: Response)
   const base = `${req.protocol}://${req.get('host')}`;
   res.json({
     issuer: base,
+    authorization_endpoint: `${base}/oauth/authorize`,
     token_endpoint: `${base}/oauth/token`,
-    grant_types_supported: ['client_credentials'],
-    token_endpoint_auth_methods_supported: ['client_secret_post'],
+    grant_types_supported: ['authorization_code', 'client_credentials'],
+    token_endpoint_auth_methods_supported: ['client_secret_post', 'none'],
     scopes_supported: ['mcp:read', 'mcp:write'],
-    response_types_supported: ['token'],
+    response_types_supported: ['code', 'token'],
+    code_challenge_methods_supported: ['S256'],
   });
 });
 
@@ -58,6 +60,16 @@ app.get('/mcp/sse', async (req: Request, res: Response) => {
     (req.query.token as string) ||
     req.headers.authorization?.replace(/^Bearer\s+/i, '') ||
     '';
+
+  if (!token) {
+    const base = `${req.protocol}://${req.get('host')}`;
+    res.setHeader(
+      'WWW-Authenticate',
+      `Bearer realm="${base}", resource_metadata_url="${base}/.well-known/oauth-authorization-server"`
+    );
+    res.status(401).json({ error: 'unauthorized', error_description: 'Authentication required. Use OAuth or pass a Bearer token.' });
+    return;
+  }
 
   const transport = new SSEServerTransport('/mcp/messages', res);
   const mcpServer = createMcpServer(`http://localhost:${PORT}`, token);

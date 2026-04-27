@@ -49,7 +49,7 @@ interface DynamicClient {
 }
 const dynamicClients = new Map<string, DynamicClient>(); // keyed by clientId
 
-setInterval(() => {
+setInterval(async () => {
   const now = Date.now();
   for (const [code, data] of pendingCodes) {
     if (data.expiresAt < now) pendingCodes.delete(code);
@@ -57,14 +57,40 @@ setInterval(() => {
   for (const [id, client] of dynamicClients) {
     if (client.expiresAt < now) dynamicClients.delete(id);
   }
+  try {
+    await getDb().query('DELETE FROM dynamic_oauth_clients WHERE expires_at < $1', [now]);
+  } catch { /* ignore */ }
 }, 60_000);
 
 async function lookupClientMeta(clientId: string): Promise<{ name: string; redirectUris: string[] } | null> {
+  // 1. In-memory cache (fast path)
   const dyn = dynamicClients.get(clientId);
   if (dyn && dyn.expiresAt > Date.now()) {
     return { name: dyn.name, redirectUris: dyn.redirectUris };
   }
+
   const db = getDb();
+
+  // 2. DB-persisted dynamic clients (survive Render restarts)
+  const dynDb = await db.query(
+    'SELECT name, redirect_uris, is_public, expires_at FROM dynamic_oauth_clients WHERE client_id = $1 AND expires_at > $2',
+    [clientId, Date.now()]
+  );
+  if (dynDb.rows[0]) {
+    const r = dynDb.rows[0];
+    const redirectUris = (r.redirect_uris || '').split('\n').map((u: string) => u.trim()).filter(Boolean);
+    // Repopulate in-memory cache
+    dynamicClients.set(clientId, {
+      clientId,
+      name: r.name,
+      redirectUris,
+      isPublic: r.is_public === 1 || r.is_public === true,
+      expiresAt: Number(r.expires_at),
+    });
+    return { name: r.name, redirectUris };
+  }
+
+  // 3. Static DB clients (created via the UI)
   const { rows } = await db.query(
     'SELECT name, redirect_uris FROM oauth_clients WHERE client_id = $1',
     [clientId]
@@ -94,14 +120,22 @@ router.post('/register', async (req: Request, res: Response) => {
   const clientId = `tf_${crypto.randomUUID().replace(/-/g, '')}`;
   const now = Math.floor(Date.now() / 1000);
 
-  // Store in memory — expires in 24 h (client re-registers as needed)
-  dynamicClients.set(clientId, {
-    clientId,
-    name: clientName,
-    redirectUris,
-    isPublic,
-    expiresAt: Date.now() + 24 * 60 * 60 * 1000,
-  });
+  const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
+
+  // Store in memory
+  dynamicClients.set(clientId, { clientId, name: clientName, redirectUris, isPublic, expiresAt });
+
+  // Persist to DB so clients survive Render restarts mid-OAuth
+  try {
+    await getDb().query(
+      `INSERT INTO dynamic_oauth_clients (client_id, name, redirect_uris, is_public, expires_at)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (client_id) DO UPDATE SET name=$2, redirect_uris=$3, is_public=$4, expires_at=$5`,
+      [clientId, clientName, redirectUris.join('\n'), isPublic ? 1 : 0, expiresAt]
+    );
+  } catch (err) {
+    console.error('Failed to persist dynamic client to DB:', err);
+  }
 
   res.status(201).json({
     client_id: clientId,

@@ -31,14 +31,20 @@ function getBaseUrl(req: Request): string {
 
 // ── OAuth well-known endpoints (MCP spec requirement) ────────────────────────
 
-// Protected Resource Metadata (RFC 9728) — tells clients which auth server to use
+// Protected Resource Metadata (RFC 9728) — tells clients which auth server to use.
+// Also includes auth endpoints directly so non-standard clients (e.g. Onyx) that
+// look for authorization_endpoint here without following authorization_servers also work.
 app.get('/.well-known/oauth-protected-resource', (req: Request, res: Response) => {
   const base = getBaseUrl(req);
   res.json({
     resource: base,
     authorization_servers: [base],
+    authorization_endpoint: `${base}/oauth/authorize`,
+    token_endpoint: `${base}/oauth/token`,
+    registration_endpoint: `${base}/oauth/register`,
     bearer_methods_supported: ['header', 'query'],
     scopes_supported: ['mcp:read', 'mcp:write'],
+    code_challenge_methods_supported: ['S256'],
   });
 });
 
@@ -88,7 +94,7 @@ app.get('/mcp/sse', async (req: Request, res: Response) => {
     const base = getBaseUrl(req);
     res.setHeader(
       'WWW-Authenticate',
-      `Bearer resource_metadata="${base}/.well-known/oauth-authorization-server"`
+      `Bearer resource_metadata="${base}/.well-known/oauth-protected-resource"`
     );
     res.status(401).json({ error: 'unauthorized', error_description: 'Authentication required. Use OAuth or pass a Bearer token.' });
     return;

@@ -146,6 +146,18 @@ export async function initDatabase(): Promise<void> {
       )
     `);
 
+    // Persists DCR clients across server restarts (in-memory alone is wiped on Render restart)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS dynamic_oauth_clients (
+        client_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        redirect_uris TEXT DEFAULT '',
+        is_public INTEGER DEFAULT 1,
+        expires_at BIGINT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
     console.log('Database initialized (PostgreSQL/Supabase)');
   } finally {
     client.release();

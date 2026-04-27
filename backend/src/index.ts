@@ -112,12 +112,18 @@ if (process.env.NODE_ENV === 'production') {
 // ── Start ────────────────────────────────────────────────────────────────────
 app.use(errorHandler);
 
-initDatabase();
-app.listen(PORT, () => {
-  console.log(`\n🚀 TaskFlow running on port ${PORT}`);
-  console.log(`   API:        http://localhost:${PORT}/api/health`);
-  console.log(`   MCP SSE:    http://localhost:${PORT}/mcp/sse`);
-  console.log(`   OAuth:      http://localhost:${PORT}/oauth/token`);
-  console.log(`   Discovery:  http://localhost:${PORT}/.well-known/oauth-authorization-server`);
-  console.log(`   MCP Info:   http://localhost:${PORT}/mcp\n`);
-});
+initDatabase()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`\n🚀 TaskFlow running on port ${PORT}`);
+      console.log(`   API:        http://localhost:${PORT}/api/health`);
+      console.log(`   MCP SSE:    http://localhost:${PORT}/mcp/sse`);
+      console.log(`   OAuth:      http://localhost:${PORT}/oauth/token`);
+      console.log(`   Discovery:  http://localhost:${PORT}/.well-known/oauth-authorization-server`);
+      console.log(`   MCP Info:   http://localhost:${PORT}/mcp\n`);
+    });
+  })
+  .catch((err) => {
+    console.error('Failed to initialize database:', err);
+    process.exit(1);
+  });

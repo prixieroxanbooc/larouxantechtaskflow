@@ -47,7 +47,7 @@ In production, Express serves the frontend `dist/` as static files from `backend
 
 ### Backend (`backend/src/`)
 
-**Database** — `node:sqlite` (Node 22 built-in, no native compilation). Synchronous `DatabaseSync` API throughout. DB file at `backend/data/taskflow.db` locally, or `$DATABASE_PATH` in production. Schema is initialised and migrated inline in `db/database.ts` using `CREATE TABLE IF NOT EXISTS` + `try { ALTER TABLE ... } catch {}` for additive migrations.
+**Database** — PostgreSQL via Supabase, using the `pg` (node-postgres) package. `getDb()` returns a `Pool`; all DB calls are `async/await` with `pool.query(sql, params)` and `$1, $2, ...` placeholders. Schema is created on startup via `initDatabase()` with `CREATE TABLE IF NOT EXISTS` statements. Requires `DATABASE_URL` env var (Supabase connection string — encode any `@` in password as `%40`).
 
 **Authentication** — JWT via `jsonwebtoken`. The `authenticate` middleware in `middleware/auth.ts` accepts three token types in order:
 1. User JWT (from login/register) — verified against `JWT_SECRET`, then **user existence is confirmed in the DB** (guards against wiped databases)
@@ -91,7 +91,7 @@ MCP tools proxy to the REST API via `callApi()`. The MCP server does NOT touch t
 | `JWT_SECRET` | Yes (prod) | JWT signing secret |
 | `NODE_ENV` | Yes (prod) | Set to `production` |
 | `PORT` | No | Default `3001` |
-| `DATABASE_PATH` | No | SQLite file path, default `backend/data/taskflow.db` |
+| `DATABASE_URL` | Yes | Supabase PostgreSQL connection string (`@` in password → `%40`) |
 | `SMTP_USER` | No | Gmail address for sending verification emails |
 | `SMTP_PASS` | No | Gmail App Password (not regular password) |
 | `SMTP_HOST` | No | Default `smtp.gmail.com` |
@@ -103,5 +103,5 @@ MCP tools proxy to the REST API via `callApi()`. The MCP server does NOT touch t
 - `.node-version` pins Node 22
 - Build command: `npm run install:all && npm run build`
 - Start command: `npm start`
-- Free tier has no persistent disk — the SQLite database is wiped on every restart/redeploy. A Render Persistent Disk (requires paid plan) mounted at `/data` with `DATABASE_PATH=/data/taskflow.db` fixes this. Alternatively, migrate to Turso (SQLite-compatible, free).
-- The auth middleware verifies that JWT users still exist in the database, so wiped-DB users are cleanly logged out rather than getting cryptic 500 errors.
+- Database is Supabase (PostgreSQL) — persistent, no wipe on redeploy. Set `DATABASE_URL` in Render env vars.
+- The auth middleware verifies that JWT users still exist in the database, so stale-token users are cleanly logged out.

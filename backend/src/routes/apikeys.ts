@@ -13,39 +13,37 @@ type ApiKeyRow = {
   created_at: string;
 };
 
-// List current user's API keys (never returns the full key)
-router.get('/', (req: AuthRequest, res: Response) => {
+router.get('/', async (req: AuthRequest, res: Response) => {
   const db = getDb();
-  const keys = db.prepare(`
+  const { rows } = await db.query(`
     SELECT id, key_prefix, name, last_used_at, created_at
-    FROM api_keys WHERE user_id = ? ORDER BY created_at DESC
-  `).all(req.user!.id) as ApiKeyRow[];
-  res.json(keys);
+    FROM api_keys WHERE user_id = $1 ORDER BY created_at DESC
+  `, [req.user!.id]);
+  res.json(rows as ApiKeyRow[]);
 });
 
-// Create a new API key — full key shown ONCE in the response
-router.post('/', (req: AuthRequest, res: Response) => {
+router.post('/', async (req: AuthRequest, res: Response) => {
   const { name } = req.body;
   if (!name?.trim()) { res.status(400).json({ error: 'Name is required' }); return; }
 
   const db = getDb();
 
-  // Build key: tf_live_ + 48 random hex chars
   const rawBytes = crypto.getRandomValues(new Uint8Array(24));
   const rawHex = Array.from(rawBytes).map((b) => b.toString(16).padStart(2, '0')).join('');
   const fullKey = `tf_live_${rawHex}`;
-  const keyPrefix = fullKey.slice(0, 16) + '…'; // "tf_live_xxxxxxxx…"
+  const keyPrefix = fullKey.slice(0, 16) + '…';
 
   const id = crypto.randomUUID();
   const keyHash = hashApiKey(fullKey);
 
-  db.prepare(
-    'INSERT INTO api_keys (id, key_prefix, key_hash, name, user_id) VALUES (?, ?, ?, ?, ?)'
-  ).run(id, keyPrefix, keyHash, name.trim(), req.user!.id);
+  await db.query(
+    'INSERT INTO api_keys (id, key_prefix, key_hash, name, user_id) VALUES ($1, $2, $3, $4, $5)',
+    [id, keyPrefix, keyHash, name.trim(), req.user!.id]
+  );
 
   res.status(201).json({
     id,
-    key: fullKey,            // shown ONCE — never stored in plaintext
+    key: fullKey,
     key_prefix: keyPrefix,
     name: name.trim(),
     created_at: new Date().toISOString(),
@@ -53,13 +51,13 @@ router.post('/', (req: AuthRequest, res: Response) => {
   });
 });
 
-// Revoke (delete) an API key
-router.delete('/:id', (req: AuthRequest, res: Response) => {
+router.delete('/:id', async (req: AuthRequest, res: Response) => {
   const db = getDb();
-  const result = db.prepare(
-    'DELETE FROM api_keys WHERE id = ? AND user_id = ?'
-  ).run(req.params.id, req.user!.id);
-  if (result.changes === 0) { res.status(404).json({ error: 'API key not found' }); return; }
+  const result = await db.query(
+    'DELETE FROM api_keys WHERE id = $1 AND user_id = $2',
+    [req.params.id, req.user!.id]
+  );
+  if ((result.rowCount ?? 0) === 0) { res.status(404).json({ error: 'API key not found' }); return; }
   res.json({ success: true });
 });
 

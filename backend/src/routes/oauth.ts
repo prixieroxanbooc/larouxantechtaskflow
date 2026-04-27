@@ -26,12 +26,13 @@ type UserRow = {
 
 // ── Client Management (requires user JWT auth) ────────────────────────────────
 
-router.get('/clients', authenticate, (req: AuthRequest, res: Response) => {
+router.get('/clients', authenticate, async (req: AuthRequest, res: Response) => {
   const db = getDb();
-  const clients = db.prepare(
-    'SELECT id, client_id, name, description, created_at FROM oauth_clients WHERE owner_id = ? ORDER BY created_at DESC'
-  ).all(req.user!.id);
-  res.json(clients);
+  const { rows } = await db.query(
+    'SELECT id, client_id, name, description, created_at FROM oauth_clients WHERE owner_id = $1 ORDER BY created_at DESC',
+    [req.user!.id]
+  );
+  res.json(rows);
 });
 
 router.post('/clients', authenticate, async (req: AuthRequest, res: Response) => {
@@ -42,14 +43,14 @@ router.post('/clients', authenticate, async (req: AuthRequest, res: Response) =>
   const id = crypto.randomUUID();
   const client_id = `tf_${crypto.randomUUID().replace(/-/g, '')}`;
 
-  // Generate a strong secret: two UUIDs concatenated (64 hex chars)
   const client_secret_raw =
     crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
   const client_secret_hash = await bcrypt.hash(client_secret_raw, 10);
 
-  db.prepare(
-    'INSERT INTO oauth_clients (id, client_id, client_secret_hash, name, description, owner_id) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(id, client_id, client_secret_hash, name.trim(), description?.trim() || '', req.user!.id);
+  await db.query(
+    'INSERT INTO oauth_clients (id, client_id, client_secret_hash, name, description, owner_id) VALUES ($1, $2, $3, $4, $5, $6)',
+    [id, client_id, client_secret_hash, name.trim(), description?.trim() || '', req.user!.id]
+  );
 
   res.status(201).json({
     id,
@@ -62,19 +63,19 @@ router.post('/clients', authenticate, async (req: AuthRequest, res: Response) =>
   });
 });
 
-router.delete('/clients/:id', authenticate, (req: AuthRequest, res: Response) => {
+router.delete('/clients/:id', authenticate, async (req: AuthRequest, res: Response) => {
   const db = getDb();
-  const result = db.prepare(
-    'DELETE FROM oauth_clients WHERE id = ? AND owner_id = ?'
-  ).run(req.params.id, req.user!.id);
-  if (result.changes === 0) { res.status(404).json({ error: 'Client not found' }); return; }
+  const result = await db.query(
+    'DELETE FROM oauth_clients WHERE id = $1 AND owner_id = $2',
+    [req.params.id, req.user!.id]
+  );
+  if ((result.rowCount ?? 0) === 0) { res.status(404).json({ error: 'Client not found' }); return; }
   res.json({ success: true });
 });
 
 // ── Token Endpoint (OAuth 2.0 Client Credentials Grant) ──────────────────────
 
 router.post('/token', async (req: Request, res: Response) => {
-  // Accept both application/json and application/x-www-form-urlencoded
   const body = req.body as Record<string, string>;
   const { grant_type, client_id, client_secret } = body;
 
@@ -95,9 +96,11 @@ router.post('/token', async (req: Request, res: Response) => {
   }
 
   const db = getDb();
-  const client = db.prepare(
-    'SELECT id, client_id, client_secret_hash, owner_id, name FROM oauth_clients WHERE client_id = ?'
-  ).get(client_id) as OAuthClientRow | undefined;
+  const { rows: clientRows } = await db.query(
+    'SELECT id, client_id, client_secret_hash, owner_id, name FROM oauth_clients WHERE client_id = $1',
+    [client_id]
+  );
+  const client = clientRows[0] as OAuthClientRow | undefined;
 
   if (!client || !(await bcrypt.compare(client_secret, client.client_secret_hash))) {
     res.status(401).json({
@@ -107,9 +110,11 @@ router.post('/token', async (req: Request, res: Response) => {
     return;
   }
 
-  const owner = db.prepare(
-    'SELECT id, email, name FROM users WHERE id = ?'
-  ).get(client.owner_id) as UserRow | undefined;
+  const { rows: ownerRows } = await db.query(
+    'SELECT id, email, name FROM users WHERE id = $1',
+    [client.owner_id]
+  );
+  const owner = ownerRows[0] as UserRow | undefined;
 
   if (!owner) {
     res.status(401).json({
@@ -119,7 +124,6 @@ router.post('/token', async (req: Request, res: Response) => {
     return;
   }
 
-  // Issue a JWT that embeds the owner's identity so existing API middleware works
   const access_token = jwt.sign(
     {
       id: owner.id,

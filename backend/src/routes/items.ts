@@ -17,106 +17,116 @@ const ItemValueSchema = z.object({
   value: z.any(),
 });
 
-router.get('/:boardId/items', (req: AuthRequest, res: Response) => {
+router.get('/:boardId/items', async (req: AuthRequest, res: Response) => {
   const db = getDb();
   const { group_id } = req.query;
-  const where = group_id ? 'WHERE i.board_id = ? AND i.group_id = ?' : 'WHERE i.board_id = ?';
+  const where = group_id ? 'WHERE i.board_id = $1 AND i.group_id = $2' : 'WHERE i.board_id = $1';
   const params: string[] = group_id ? [req.params.boardId, group_id as string] : [req.params.boardId];
 
-  const rows = db.prepare(`
+  const { rows } = await db.query(`
     SELECT i.*, iv.column_id, iv.value
     FROM items i
     LEFT JOIN item_values iv ON i.id = iv.item_id
     ${where} ORDER BY i.group_id, i.position
-  `).all(...params) as any[];
+  `, params);
 
-  const map: Record<string, any> = {};
-  for (const row of rows) {
-    if (!map[row.id]) map[row.id] = { id: row.id, name: row.name, group_id: row.group_id, board_id: row.board_id, position: row.position, created_by: row.created_by, created_at: row.created_at, updated_at: row.updated_at, values: {} };
-    if (row.column_id) map[row.id].values[row.column_id] = row.value;
+  const map: Record<string, Record<string, unknown>> = {};
+  for (const row of rows as Record<string, unknown>[]) {
+    const rowId = row.id as string;
+    if (!map[rowId]) map[rowId] = { id: row.id, name: row.name, group_id: row.group_id, board_id: row.board_id, position: row.position, created_by: row.created_by, created_at: row.created_at, updated_at: row.updated_at, values: {} };
+    if (row.column_id) (map[rowId].values as Record<string, unknown>)[row.column_id as string] = row.value;
   }
   res.json(Object.values(map));
 });
 
-router.post('/:boardId/items', (req: AuthRequest, res: Response) => {
+router.post('/:boardId/items', async (req: AuthRequest, res: Response) => {
   const parsed = ItemSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.flatten() }); return; }
 
   const db = getDb();
-  const maxPos = (db.prepare('SELECT MAX(position) as p FROM items WHERE group_id = ?').get(parsed.data.group_id) as any)?.p ?? -1;
+  const { rows: maxRows } = await db.query('SELECT MAX(position) as p FROM items WHERE group_id = $1', [parsed.data.group_id]);
+  const maxPos = (maxRows[0]?.p as number | null) ?? -1;
   const id = crypto.randomUUID();
-  db.prepare('INSERT INTO items (id, board_id, group_id, name, position, created_by) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(id, req.params.boardId, parsed.data.group_id, parsed.data.name, parsed.data.position ?? maxPos + 1, req.user!.id);
+  await db.query(
+    'INSERT INTO items (id, board_id, group_id, name, position, created_by) VALUES ($1, $2, $3, $4, $5, $6)',
+    [id, req.params.boardId, parsed.data.group_id, parsed.data.name, parsed.data.position ?? maxPos + 1, req.user!.id]
+  );
 
-  const rows = db.prepare(`
+  const { rows } = await db.query(`
     SELECT i.*, iv.column_id, iv.value FROM items i
-    LEFT JOIN item_values iv ON i.id = iv.item_id WHERE i.id = ?
-  `).all(id) as any[];
+    LEFT JOIN item_values iv ON i.id = iv.item_id WHERE i.id = $1
+  `, [id]);
 
-  const item: any = { id, name: parsed.data.name, group_id: parsed.data.group_id, board_id: req.params.boardId, values: {} };
-  for (const row of rows) {
-    if (row.column_id) item.values[row.column_id] = row.value;
+  const item: Record<string, unknown> = { id, name: parsed.data.name, group_id: parsed.data.group_id, board_id: req.params.boardId, values: {} };
+  for (const row of rows as Record<string, unknown>[]) {
+    if (row.column_id) (item.values as Record<string, unknown>)[row.column_id as string] = row.value;
   }
   res.status(201).json(item);
 });
 
-router.put('/:boardId/items/:id', (req: AuthRequest, res: Response) => {
+router.put('/:boardId/items/:id', async (req: AuthRequest, res: Response) => {
   const db = getDb();
   const { name, group_id, position } = req.body;
 
   if (name !== undefined || group_id !== undefined || position !== undefined) {
     const updates: string[] = [];
-    const vals: any[] = [];
-    if (name !== undefined) { updates.push('name = ?'); vals.push(name); }
-    if (group_id !== undefined) { updates.push('group_id = ?'); vals.push(group_id); }
-    if (position !== undefined) { updates.push('position = ?'); vals.push(position); }
-    updates.push("updated_at = datetime('now')");
-    db.prepare(`UPDATE items SET ${updates.join(', ')} WHERE id = ? AND board_id = ?`).run(...vals, req.params.id, req.params.boardId);
+    const vals: unknown[] = [];
+    let idx = 1;
+    if (name !== undefined) { updates.push(`name = $${idx++}`); vals.push(name); }
+    if (group_id !== undefined) { updates.push(`group_id = $${idx++}`); vals.push(group_id); }
+    if (position !== undefined) { updates.push(`position = $${idx++}`); vals.push(position); }
+    updates.push('updated_at = NOW()');
+    vals.push(req.params.id, req.params.boardId);
+    await db.query(
+      `UPDATE items SET ${updates.join(', ')} WHERE id = $${idx++} AND board_id = $${idx}`,
+      vals
+    );
   }
 
-  res.json(db.prepare('SELECT * FROM items WHERE id = ?').get(req.params.id));
+  const { rows } = await db.query('SELECT * FROM items WHERE id = $1', [req.params.id]);
+  res.json(rows[0]);
 });
 
-router.put('/:boardId/items/:id/values', (req: AuthRequest, res: Response) => {
+router.put('/:boardId/items/:id/values', async (req: AuthRequest, res: Response) => {
   const parsed = ItemValueSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.flatten() }); return; }
 
   const db = getDb();
   const vid = crypto.randomUUID();
   const value = typeof parsed.data.value === 'string' ? parsed.data.value : JSON.stringify(parsed.data.value);
-  db.prepare(`
-    INSERT INTO item_values (id, item_id, column_id, value) VALUES (?, ?, ?, ?)
-    ON CONFLICT(item_id, column_id) DO UPDATE SET value = excluded.value, updated_at = datetime('now')
-  `).run(vid, req.params.id, parsed.data.column_id, value);
+  await db.query(`
+    INSERT INTO item_values (id, item_id, column_id, value) VALUES ($1, $2, $3, $4)
+    ON CONFLICT(item_id, column_id) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+  `, [vid, req.params.id, parsed.data.column_id, value]);
 
-  db.prepare("UPDATE items SET updated_at = datetime('now') WHERE id = ?").run(req.params.id);
+  await db.query("UPDATE items SET updated_at = NOW() WHERE id = $1", [req.params.id]);
   res.json({ item_id: req.params.id, column_id: parsed.data.column_id, value });
 });
 
-router.delete('/:boardId/items/:id', (req: AuthRequest, res: Response) => {
+router.delete('/:boardId/items/:id', async (req: AuthRequest, res: Response) => {
   const db = getDb();
-  const result = db.prepare('DELETE FROM items WHERE id = ? AND board_id = ?').run(req.params.id, req.params.boardId);
-  if (result.changes === 0) { res.status(404).json({ error: 'Item not found' }); return; }
+  const result = await db.query('DELETE FROM items WHERE id = $1 AND board_id = $2', [req.params.id, req.params.boardId]);
+  if ((result.rowCount ?? 0) === 0) { res.status(404).json({ error: 'Item not found' }); return; }
   res.json({ success: true });
 });
 
-router.get('/:boardId/items/:id/comments', (req: AuthRequest, res: Response) => {
+router.get('/:boardId/items/:id/comments', async (req: AuthRequest, res: Response) => {
   const db = getDb();
-  const comments = db.prepare(`
+  const { rows } = await db.query(`
     SELECT c.*, u.name as user_name, u.avatar FROM comments c
-    JOIN users u ON c.user_id = u.id WHERE c.item_id = ? ORDER BY c.created_at
-  `).all(req.params.id);
-  res.json(comments);
+    JOIN users u ON c.user_id = u.id WHERE c.item_id = $1 ORDER BY c.created_at
+  `, [req.params.id]);
+  res.json(rows);
 });
 
-router.post('/:boardId/items/:id/comments', (req: AuthRequest, res: Response) => {
+router.post('/:boardId/items/:id/comments', async (req: AuthRequest, res: Response) => {
   const { text } = req.body;
   if (!text?.trim()) { res.status(400).json({ error: 'Text required' }); return; }
   const db = getDb();
   const id = crypto.randomUUID();
-  db.prepare('INSERT INTO comments (id, item_id, user_id, text) VALUES (?, ?, ?, ?)').run(id, req.params.id, req.user!.id, text);
-  const comment = db.prepare('SELECT c.*, u.name as user_name FROM comments c JOIN users u ON c.user_id = u.id WHERE c.id = ?').get(id);
-  res.status(201).json(comment);
+  await db.query('INSERT INTO comments (id, item_id, user_id, text) VALUES ($1, $2, $3, $4)', [id, req.params.id, req.user!.id, text]);
+  const { rows } = await db.query('SELECT c.*, u.name as user_name FROM comments c JOIN users u ON c.user_id = u.id WHERE c.id = $1', [id]);
+  res.status(201).json(rows[0]);
 });
 
 export default router;

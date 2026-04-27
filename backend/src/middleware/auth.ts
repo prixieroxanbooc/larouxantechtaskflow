@@ -29,9 +29,9 @@ export async function authenticate(req: AuthRequest, res: Response, next: NextFu
   // ── Try JWT first (user login token or OAuth client token) ─────────────────
   try {
     const payload = jwt.verify(token, JWT_SECRET) as UserPayload;
-    // Confirm user still exists in DB (guards against wiped/reset database)
     const db = getDb();
-    const dbUser = db.prepare('SELECT id, email, name FROM users WHERE id = ?').get(payload.id) as DbUserRow | undefined;
+    const { rows } = await db.query('SELECT id, email, name FROM users WHERE id = $1', [payload.id]);
+    const dbUser = rows[0] as DbUserRow | undefined;
     if (!dbUser) {
       res.status(401).json({ error: 'Session expired, please log in again' });
       return;
@@ -48,15 +48,16 @@ export async function authenticate(req: AuthRequest, res: Response, next: NextFu
     try {
       const db = getDb();
       const keyHash = hashApiKey(token);
-      const row = db.prepare(`
+      const { rows } = await db.query(`
         SELECT ak.id, u.id as uid, u.email, u.name
         FROM api_keys ak
         JOIN users u ON ak.user_id = u.id
-        WHERE ak.key_hash = ?
-      `).get(keyHash) as (DbUserRow & { uid: string }) | undefined;
+        WHERE ak.key_hash = $1
+      `, [keyHash]);
 
+      const row = rows[0] as (DbUserRow & { uid: string }) | undefined;
       if (row) {
-        db.prepare("UPDATE api_keys SET last_used_at = datetime('now') WHERE key_hash = ?").run(keyHash);
+        await db.query("UPDATE api_keys SET last_used_at = NOW() WHERE key_hash = $1", [keyHash]);
         req.user = { id: row.uid, email: row.email, name: row.name };
         next();
         return;

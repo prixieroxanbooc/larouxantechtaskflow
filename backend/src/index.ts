@@ -20,13 +20,27 @@ app.use(cors({ origin: '*', credentials: false }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true })); // needed for OAuth form-encoded requests
 
-// ── OAuth well-known discovery (root level, MCP spec requirement) ─────────────
+// ── OAuth well-known endpoints (MCP spec requirement) ────────────────────────
+
+// Protected Resource Metadata (RFC 9728) — tells clients which auth server to use
+app.get('/.well-known/oauth-protected-resource', (req: Request, res: Response) => {
+  const base = `${req.protocol}://${req.get('host')}`;
+  res.json({
+    resource: base,
+    authorization_servers: [base],
+    bearer_methods_supported: ['header', 'query'],
+    scopes_supported: ['mcp:read', 'mcp:write'],
+  });
+});
+
+// Authorization Server Metadata (RFC 8414)
 app.get('/.well-known/oauth-authorization-server', (req: Request, res: Response) => {
   const base = `${req.protocol}://${req.get('host')}`;
   res.json({
     issuer: base,
     authorization_endpoint: `${base}/oauth/authorize`,
     token_endpoint: `${base}/oauth/token`,
+    registration_endpoint: `${base}/oauth/register`,
     grant_types_supported: ['authorization_code', 'client_credentials'],
     token_endpoint_auth_methods_supported: ['client_secret_post', 'none'],
     scopes_supported: ['mcp:read', 'mcp:write'],
@@ -65,7 +79,7 @@ app.get('/mcp/sse', async (req: Request, res: Response) => {
     const base = `${req.protocol}://${req.get('host')}`;
     res.setHeader(
       'WWW-Authenticate',
-      `Bearer realm="${base}", resource_metadata_url="${base}/.well-known/oauth-authorization-server"`
+      `Bearer resource_metadata="${base}/.well-known/oauth-protected-resource"`
     );
     res.status(401).json({ error: 'unauthorized', error_description: 'Authentication required. Use OAuth or pass a Bearer token.' });
     return;

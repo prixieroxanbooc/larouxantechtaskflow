@@ -27,7 +27,7 @@ type UserRow = {
   password_hash: string;
 };
 
-// ── In-memory Authorization Code store (expires in 10 min) ───────────────────
+// ── In-memory stores ──────────────────────────────────────────────────────────
 
 interface PendingCode {
   clientId: string;
@@ -39,12 +39,80 @@ interface PendingCode {
   expiresAt: number;
 }
 const pendingCodes = new Map<string, PendingCode>();
+
+interface DynamicClient {
+  clientId: string;
+  name: string;
+  redirectUris: string[];
+  isPublic: boolean; // true = no client_secret (PKCE only)
+  expiresAt: number;
+}
+const dynamicClients = new Map<string, DynamicClient>(); // keyed by clientId
+
 setInterval(() => {
   const now = Date.now();
   for (const [code, data] of pendingCodes) {
     if (data.expiresAt < now) pendingCodes.delete(code);
   }
+  for (const [id, client] of dynamicClients) {
+    if (client.expiresAt < now) dynamicClients.delete(id);
+  }
 }, 60_000);
+
+async function lookupClientMeta(clientId: string): Promise<{ name: string; redirectUris: string[] } | null> {
+  const dyn = dynamicClients.get(clientId);
+  if (dyn && dyn.expiresAt > Date.now()) {
+    return { name: dyn.name, redirectUris: dyn.redirectUris };
+  }
+  const db = getDb();
+  const { rows } = await db.query(
+    'SELECT name, redirect_uris FROM oauth_clients WHERE client_id = $1',
+    [clientId]
+  );
+  if (!rows[0]) return null;
+  return {
+    name: rows[0].name,
+    redirectUris: (rows[0].redirect_uris || '').split('\n').map((u: string) => u.trim()).filter(Boolean),
+  };
+}
+
+// ── Dynamic Client Registration (RFC 7591) — public, no auth required ─────────
+
+router.post('/register', async (req: Request, res: Response) => {
+  const body = req.body as Record<string, unknown>;
+  const clientName = (body.client_name as string) || 'MCP Client';
+  const rawUris = body.redirect_uris;
+  const redirectUris: string[] = Array.isArray(rawUris)
+    ? (rawUris as string[]).filter((u) => typeof u === 'string')
+    : typeof rawUris === 'string'
+    ? [rawUris]
+    : [];
+
+  const authMethod = (body.token_endpoint_auth_method as string) || 'none';
+  const isPublic = authMethod === 'none';
+
+  const clientId = `tf_${crypto.randomUUID().replace(/-/g, '')}`;
+  const now = Math.floor(Date.now() / 1000);
+
+  // Store in memory — expires in 24 h (client re-registers as needed)
+  dynamicClients.set(clientId, {
+    clientId,
+    name: clientName,
+    redirectUris,
+    isPublic,
+    expiresAt: Date.now() + 24 * 60 * 60 * 1000,
+  });
+
+  res.status(201).json({
+    client_id: clientId,
+    client_id_issued_at: now,
+    redirect_uris: redirectUris,
+    grant_types: body.grant_types || ['authorization_code'],
+    response_types: ['code'],
+    token_endpoint_auth_method: authMethod,
+    client_name: clientName,
+  });
+});
 
 // ── Client Management (requires user JWT auth) ────────────────────────────────
 
@@ -202,24 +270,13 @@ router.get('/authorize', async (req: Request, res: Response) => {
     return;
   }
 
-  const db = getDb();
-  const { rows } = await db.query(
-    'SELECT name, redirect_uris FROM oauth_clients WHERE client_id = $1',
-    [client_id]
-  );
-  const client = rows[0] as { name: string; redirect_uris: string } | undefined;
-
+  const client = await lookupClientMeta(client_id);
   if (!client) {
     res.status(400).send('Unknown client_id');
     return;
   }
 
-  const allowedUris = (client.redirect_uris || '')
-    .split('\n')
-    .map((u: string) => u.trim())
-    .filter(Boolean);
-
-  if (redirect_uri && allowedUris.length > 0 && !allowedUris.includes(redirect_uri)) {
+  if (redirect_uri && client.redirectUris.length > 0 && !client.redirectUris.includes(redirect_uri)) {
     res.status(400).send('redirect_uri not registered for this client');
     return;
   }
@@ -247,11 +304,7 @@ router.post('/authorize', async (req: Request, res: Response) => {
   const db = getDb();
 
   // Verify client still exists and re-check redirect_uri
-  const { rows: clientRows } = await db.query(
-    'SELECT name, redirect_uris FROM oauth_clients WHERE client_id = $1',
-    [client_id]
-  );
-  const client = clientRows[0] as { name: string; redirect_uris: string } | undefined;
+  const client = await lookupClientMeta(client_id);
 
   const errorRedirect = (msg: string) => {
     const params = new URLSearchParams({ response_type: 'code', client_id, scope, error: msg });

@@ -100,6 +100,10 @@ app.get('/mcp/sse', async (req: Request, res: Response) => {
     return;
   }
 
+  // Disable nginx/Render proxy buffering so SSE events stream immediately
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.setHeader('Cache-Control', 'no-cache');
+
   const transport = new SSEServerTransport('/mcp/messages', res);
   const mcpServer = createMcpServer(`http://localhost:${PORT}`, token);
 
